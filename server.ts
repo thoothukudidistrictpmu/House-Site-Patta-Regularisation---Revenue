@@ -8,9 +8,27 @@ import { seedMasterBeneficiaries, getDb } from './server/db.ts';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+function resolvePort(): number {
+  const portArgIdx = process.argv.indexOf('--port');
+  if (portArgIdx !== -1 && process.argv[portArgIdx + 1]) {
+    const p = parseInt(process.argv[portArgIdx + 1], 10);
+    if (!isNaN(p)) return p;
+  }
+  if (process.env.DEFAULT_APP_PORT) {
+    const p = parseInt(process.env.DEFAULT_APP_PORT, 10);
+    if (!isNaN(p)) return p;
+  }
+  // Cloud Run sets PORT=8080 for container ingress, but internal app must listen on 3000
+  if (process.env.PORT && process.env.PORT !== '8080') {
+    const p = parseInt(process.env.PORT, 10);
+    if (!isNaN(p)) return p;
+  }
+  return 3000;
+}
+
 async function startServer() {
   const app = express();
-  const PORT = parseInt(process.env.PORT || '3000', 10);
+  const PORT = resolvePort();
   const isProduction = process.env.NODE_ENV === 'production';
 
   app.use(express.json());
@@ -45,15 +63,29 @@ async function startServer() {
     const distPath = path.resolve(__dirname, 'dist');
     if (fs.existsSync(distPath)) {
       app.use(express.static(distPath));
-      app.get('*', (req, res) => {
+      app.get('*', (_req, res) => {
         res.sendFile(path.join(distPath, 'index.html'));
       });
     }
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`[Thoothukudi Patta Portal] Server running on http://0.0.0.0:${PORT}`);
   });
+
+  server.on('error', (err: any) => {
+    console.error('[Server] HTTP server listen error:', err);
+  });
+
+  const handleShutdown = () => {
+    console.log('[Server] Shutting down gracefully...');
+    server.close(() => {
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGTERM', handleShutdown);
+  process.on('SIGINT', handleShutdown);
 }
 
 startServer().catch(err => {

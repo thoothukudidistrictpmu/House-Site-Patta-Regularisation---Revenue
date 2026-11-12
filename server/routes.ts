@@ -1,14 +1,4 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { Router } from 'express';
-import {
-  appsScriptApi,
-  getAppsScriptConfig,
-  updateAppsScriptUrl,
-  pingAppsScript,
-  DEFAULT_API_SECRET_KEY
-} from './appsScriptClient.ts';
 import {
   getDb,
   seedMasterBeneficiaries,
@@ -36,9 +26,6 @@ import {
   enforceTalukScope,
   AuthenticatedRequest
 } from './auth.ts';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 export const apiRouter = Router();
 
@@ -650,38 +637,7 @@ apiRouter.put('/beneficiaries/:id/verify', authMiddleware, async (req: Authentic
     }
   }
 
-  // Attempt Google Apps Script Write-Back
-  let appsScriptWriteSuccess = false;
-  let appsScriptError: string | null = null;
-  if (appsScriptApi.isConfigured()) {
-    try {
-      const gasRes = await appsScriptApi.updateVerification(id, {
-        application_category: beneficiary.application_category,
-        community: community ? community.trim() : '',
-        patta_issued: isPattaIssuedVal,
-        patta_number: patta_number ? patta_number.trim() : '',
-        patta_issue_date: patta_issue_date || '',
-        seniority_register_maintained: seniorityMaintainedVal,
-        included_in_seniority_register: included_in_seniority_register || 'Pending',
-        seniority_number: seniority_number ? seniority_number.trim() : '',
-        land_occupied: land_occupied || 'Verification Pending',
-        relocation_willingness: relocation_willingness || 'In-situ Regularisation',
-        firka: firka ? firka.trim() : '',
-        verified_revenue_village: verified_revenue_village ? verified_revenue_village.trim() : '',
-        remarks: remarks ? remarks.trim() : '',
-        verification_status: statusVal,
-        proceedings_number: proceedings_number ? proceedings_number.trim() : ''
-      }, user);
-      if (gasRes && gasRes.success) {
-        appsScriptWriteSuccess = true;
-      }
-    } catch (err: any) {
-      appsScriptError = err.message;
-      console.warn('[AppsScriptWrite] Note:', err.message);
-    }
-  }
-
-  // Attempt direct Google Sheets Write-Back if token provided
+  // Attempt Google Sheets Write-Back if token provided
   let googleSheetWriteSuccess = false;
   let googleSheetError: string | null = null;
   let updatedRange: string | null = null;
@@ -725,7 +681,13 @@ apiRouter.put('/beneficiaries/:id/verify', authMiddleware, async (req: Authentic
     }
   }
 
-  const isSyncedToSheet = appsScriptWriteSuccess || googleSheetWriteSuccess;
+  // If Google Sheets write was attempted and failed, do NOT falsely show success
+  if (incomingGoogleToken && !googleSheetWriteSuccess) {
+    return res.status(502).json({
+      error: `Failed to write verification to Google Sheets: ${googleSheetError}. Please ensure you are authorized.`,
+      google_sheets_synced: false
+    });
+  }
 
   // Save to SQLite taluk_verification
   const verifId = `TV-${id}`;
@@ -765,26 +727,18 @@ apiRouter.put('/beneficiaries/:id/verify', authMiddleware, async (req: Authentic
       verified_revenue_village ? verified_revenue_village.trim() : null,
       statusVal,
       remarks ? remarks.trim() : null,
-      isSyncedToSheet ? 1 : 0,
-      isSyncedToSheet ? nowIso : null,
+      googleSheetWriteSuccess ? 1 : 0,
+      googleSheetWriteSuccess ? nowIso : null,
       updatedByUsername
     );
 
-    let message = 'Verification recorded in portal database.';
-    if (appsScriptWriteSuccess) {
-      message = `Verification saved and synchronized with Google Spreadsheet row #${sheetRow} via Google Apps Script Web App.`;
-    } else if (googleSheetWriteSuccess) {
-      message = `Verification saved and synchronized with Google Sheets row #${sheetRow}.`;
-    } else if (appsScriptApi.isConfigured()) {
-      message = `Verification recorded in portal. (Apps Script response: ${appsScriptError || 'pending'}).`;
-    }
-
     res.json({
       success: true,
-      message,
+      message: googleSheetWriteSuccess
+        ? `Verification saved and synchronized with Google Sheets row ${sheetRow}.`
+        : 'Verification recorded in portal database. (Connect Google Sheets to enable live sheet write-back).',
       verification_status: statusVal,
-      google_sheets_synced: isSyncedToSheet,
-      apps_script_synced: appsScriptWriteSuccess,
+      google_sheets_synced: googleSheetWriteSuccess,
       sheet_name: sheetName,
       sheet_row: sheetRow,
       updatedRange
@@ -796,46 +750,7 @@ apiRouter.put('/beneficiaries/:id/verify', authMiddleware, async (req: Authentic
 });
 
 // ==========================================
-// 6. Google Apps Script Web App Endpoints
-// ==========================================
-
-apiRouter.get('/apps-script/config', authMiddleware, (req, res) => {
-  res.json(getAppsScriptConfig());
-});
-
-apiRouter.post('/apps-script/config', authMiddleware, (req: AuthenticatedRequest, res) => {
-  if (req.user?.role !== 'District Admin' && req.user?.assigned_taluk !== 'All Taluks') {
-    return res.status(403).json({ error: 'Access restricted to District Admin.' });
-  }
-  const { webAppUrl } = req.body;
-  if (typeof webAppUrl !== 'string') {
-    return res.status(400).json({ error: 'webAppUrl must be a string.' });
-  }
-  const updated = updateAppsScriptUrl(webAppUrl);
-  res.json({ success: true, config: updated });
-});
-
-apiRouter.post('/apps-script/ping', authMiddleware, async (req: AuthenticatedRequest, res) => {
-  const { url } = req.body;
-  const result = await pingAppsScript(url);
-  res.json(result);
-});
-
-apiRouter.get('/apps-script/code', authMiddleware, (req, res) => {
-  try {
-    const codePath = path.resolve(__dirname, '../google-apps-script/Code.gs');
-    if (fs.existsSync(codePath)) {
-      const code = fs.readFileSync(codePath, 'utf-8');
-      return res.json({ success: true, code });
-    }
-    res.status(404).json({ error: 'Code.gs file not found.' });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ==========================================
-// 7. Google Sheets Live Synchronization Endpoints
+// 6. Google Sheets Live Synchronization Endpoints
 // ==========================================
 
 apiRouter.get('/sheets/status', authMiddleware, (req, res) => {
@@ -847,7 +762,6 @@ apiRouter.get('/sheets/status', authMiddleware, (req, res) => {
   res.json({
     spreadsheetId: GOOGLE_SPREADSHEET_ID,
     connected: true,
-    appsScript: getAppsScriptConfig(),
     worksheets: [
       { name: SHEET_NAME_FHS, description: 'New Free House Site Patta dataset', expectedRows: 28701 },
       { name: SHEET_NAME_REG, description: 'Patta Regularisation dataset', expectedRows: 832 },

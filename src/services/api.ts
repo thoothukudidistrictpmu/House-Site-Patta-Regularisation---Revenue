@@ -8,9 +8,7 @@ import {
   ImportAuditSummary,
   ImportPreviewResult,
   AuditTrailEntry,
-  GoogleSheetsSyncStatus,
-  AppsScriptConfig,
-  AppsScriptPingResult
+  GoogleSheetsSyncStatus
 } from '../types.ts';
 
 // In-memory token storage (No sensitive data or tokens written to localStorage)
@@ -189,34 +187,11 @@ export const api = {
     });
   },
 
-  ensureGoogleSheetHeaders: async (googleAccessToken?: string): Promise<{ success: boolean; message: string }> => {
+  ensureGoogleSheetHeaders: async (googleAccessToken: string): Promise<{ success: boolean; message: string }> => {
     return request('/api/sheets/ensure-headers', {
       method: 'POST',
       body: JSON.stringify({ google_access_token: googleAccessToken })
     });
-  },
-
-  // Google Apps Script Web App Integration
-  getAppsScriptConfig: async (): Promise<AppsScriptConfig> => {
-    return request<AppsScriptConfig>('/api/apps-script/config');
-  },
-
-  updateAppsScriptConfig: async (webAppUrl: string): Promise<{ success: boolean; config: AppsScriptConfig }> => {
-    return request('/api/apps-script/config', {
-      method: 'POST',
-      body: JSON.stringify({ webAppUrl })
-    });
-  },
-
-  pingAppsScript: async (url?: string): Promise<AppsScriptPingResult> => {
-    return request<AppsScriptPingResult>('/api/apps-script/ping', {
-      method: 'POST',
-      body: JSON.stringify({ url })
-    });
-  },
-
-  getAppsScriptCode: async (): Promise<{ success: boolean; code: string }> => {
-    return request('/api/apps-script/code');
   },
 
   // Data Import & Audit Management (District Admin only)

@@ -39,6 +39,12 @@ let dbInstance: DatabaseSync | null = null;
 export function getDb(): DatabaseSync {
   if (!dbInstance) {
     dbInstance = new DatabaseSync(DB_PATH);
+    try {
+      dbInstance.exec('PRAGMA journal_mode = WAL;');
+      dbInstance.exec('PRAGMA synchronous = NORMAL;');
+    } catch {
+      // ignore pragma failure
+    }
     initTables(dbInstance);
   }
   return dbInstance;

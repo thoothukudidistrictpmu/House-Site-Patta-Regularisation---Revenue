@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Beneficiary, TalukVerification, UserAccount, AuditTrailEntry } from '../types.ts';
 import { api } from '../services/api.ts';
+import { getGoogleAccessToken, googleSignIn, getGoogleUser } from '../services/googleAuth.ts';
 import {
   X,
   CheckCircle2,
@@ -39,6 +40,10 @@ export const BeneficiaryProfileModal: React.FC<BeneficiaryProfileModalProps> = (
   const [auditHistory, setAuditHistory] = useState<AuditTrailEntry[]>([]);
   const [loadingAudit, setLoadingAudit] = useState(false);
 
+  // Google Sheets Connection State
+  const [googleToken, setGoogleToken] = useState<string | null>(getGoogleAccessToken());
+  const [googleUser, setGoogleUser] = useState(getGoogleUser());
+  const [connectingGoogle, setConnectingGoogle] = useState(false);
 
   // 13 Required Verification Fields
   const [community, setCommunity] = useState('BC');
@@ -130,11 +135,26 @@ export const BeneficiaryProfileModal: React.FC<BeneficiaryProfileModalProps> = (
     }
   };
 
+  const handleConnectGoogle = async () => {
+    setConnectingGoogle(true);
+    try {
+      const { user, accessToken } = await googleSignIn();
+      setGoogleUser(user);
+      setGoogleToken(accessToken);
+    } catch (err: any) {
+      setError('Google Sign-In failed: ' + err.message);
+    } finally {
+      setConnectingGoogle(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     setError(null);
     setSuccessMsg(null);
+
+    const token = googleToken || getGoogleAccessToken();
 
     try {
       const res = await api.submitVerification(
@@ -155,11 +175,12 @@ export const BeneficiaryProfileModal: React.FC<BeneficiaryProfileModalProps> = (
           verification_status: verificationStatus,
           remarks: remarks.trim() || null,
           proceedings_number: proceedingsNumber.trim() || null
-        }
+        },
+        token
       );
 
       if (res.google_sheets_synced) {
-        setSuccessMsg(`Verification saved and synced to Google Sheet (${res.sheet_name || 'Spreadsheet'} Row #${res.sheet_row || ''})!`);
+        setSuccessMsg(`Verification saved and synced to Google Sheet row #${res.sheet_row || ''}!`);
       } else {
         setSuccessMsg(res.message || 'Verification details successfully saved.');
       }
@@ -234,21 +255,36 @@ export const BeneficiaryProfileModal: React.FC<BeneficiaryProfileModalProps> = (
           </div>
         </div>
 
-        {/* Google Sheets Primary Storage Status */}
-        <div className="px-5 py-2 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between text-xs gap-2">
+        {/* Google Sheets Connection Banner */}
+        <div className="px-5 py-2 bg-slate-100/70 border-b border-slate-200 flex flex-wrap items-center justify-between text-xs gap-2">
           <div className="flex items-center space-x-2">
             <FileSpreadsheet className="w-3.5 h-3.5 text-teal-700 flex-shrink-0" />
             <span className="text-[11px] text-slate-600">
               Target Spreadsheet Row: <strong className="text-slate-800">{sheetRefText}</strong>
             </span>
-            <span className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
-              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-              <span>Primary Storage: Google Sheets (GAS Backend)</span>
-            </span>
+            {googleToken ? (
+              <span className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                <span>Live Write-Back Active ({googleUser?.email || 'Authorized'})</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                <span>Local DB (Sign-in to write directly to Google Sheet)</span>
+              </span>
+            )}
           </div>
-          <span className="text-[11px] text-slate-500 font-mono">
-            {beneficiary?.application_category}
-          </span>
+
+          {!googleToken && (
+            <button
+              type="button"
+              onClick={handleConnectGoogle}
+              disabled={connectingGoogle}
+              className="px-2.5 py-1 bg-white hover:bg-slate-50 border border-slate-300 text-[#0F2744] rounded text-[11px] font-semibold shadow-2xs transition flex items-center space-x-1 cursor-pointer disabled:opacity-50"
+            >
+              <FileSpreadsheet className="w-3 h-3 text-teal-700" />
+              <span>{connectingGoogle ? 'Connecting...' : 'Authorize Google Sheets'}</span>
+            </button>
+          )}
         </div>
 
         {/* Modal Body */}
