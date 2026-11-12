@@ -1,0 +1,6 @@
+{
+  "name": "Thoothukudi District Patta Monitoring Portal",
+  "description": "District Administration of Thoothukudi - House Site Patta & Patta Regularisation Monitoring Portal for Petitions received via Grievance Redressal Petitions (GDP).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
