@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { UserAccount } from '../types.ts';
 import { LogOut, Search, FileSpreadsheet, CheckCircle2 } from 'lucide-react';
-import { getGoogleAccessToken, googleSignIn, getGoogleUser, initGoogleAuth } from '../services/googleAuth.ts';
 
 interface HeaderProps {
   currentUser: UserAccount;
@@ -20,41 +19,10 @@ export const Header: React.FC<HeaderProps> = ({
   const locationLabel = isDM ? 'Thoothukudi District' : currentUser.assigned_taluk;
   const roleLabel = isDM ? 'Collector / DM' : 'Tahsildar';
 
-  const [googleToken, setGoogleToken] = useState<string | null>(getGoogleAccessToken());
-  const [googleUser, setGoogleUser] = useState(getGoogleUser());
-  const [isConnecting, setIsConnecting] = useState(false);
-
-  useEffect(() => {
-    const unsubscribe = initGoogleAuth(
-      (user, token) => {
-        setGoogleUser(user);
-        setGoogleToken(token);
-      },
-      () => {
-        setGoogleToken(null);
-        setGoogleUser(null);
-      }
-    );
-    return () => unsubscribe();
-  }, []);
-
-  const handleConnectGoogle = async () => {
-    setIsConnecting(true);
-    try {
-      const { user, accessToken } = await googleSignIn();
-      setGoogleUser(user);
-      setGoogleToken(accessToken);
-    } catch (err: any) {
-      console.error('Google Sign-In failed:', err);
-    } finally {
-      setIsConnecting(false);
-    }
-  };
-
   return (
     <header className="sticky top-0 z-30 bg-white border-b border-slate-200 shadow-2xs h-13 px-4 sm:px-6 flex items-center justify-between">
       
-      {/* Left: Format: Taluk Name | Tahsildar */}
+      {/* Left: Format: Taluk Name | Tahsildar | Username */}
       <div className="flex items-center space-x-2 text-xs">
         <span className="font-bold text-slate-900 text-sm tracking-tight">
           {locationLabel}
@@ -83,25 +51,19 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Right: Google Sheets Status + Logout */}
+      {/* Right: Primary Storage Indicator + Logout */}
       <div className="flex items-center space-x-3">
-        {googleToken ? (
-          <div className="hidden lg:flex items-center space-x-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-800 rounded-md border border-emerald-200 text-[11px] font-medium" title={googleUser?.email || 'Google Sheets OAuth Active'}>
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Sheets Connected</span>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={handleConnectGoogle}
-            disabled={isConnecting}
-            className="hidden sm:flex items-center space-x-1.5 px-2.5 py-1 bg-white hover:bg-slate-50 border border-slate-200 rounded-md text-[11px] font-medium text-slate-700 shadow-2xs transition cursor-pointer disabled:opacity-50"
-            title="Connect Google account for live Google Sheets synchronization"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-teal-700" />
-            <span>{isConnecting ? 'Connecting...' : 'Connect Sheets'}</span>
-          </button>
-        )}
+        <div
+          className="hidden md:flex items-center space-x-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-800 rounded-md border border-emerald-200 text-[11px] font-medium"
+          title="Google Spreadsheet (ID: 1wcvgGj_Y6__RpUSDjv5J3D0OWVPiplZLdN0BZ6KPvfw) is the primary centralized database"
+        >
+          <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-700" />
+          <span className="flex items-center space-x-1">
+            <span>Primary DB:</span>
+            <span className="font-semibold text-emerald-900">Google Sheets (GAS Backend)</span>
+          </span>
+          <CheckCircle2 className="w-3 h-3 text-emerald-600 ml-0.5" />
+        </div>
 
         <button
           onClick={onLogout}

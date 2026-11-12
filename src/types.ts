@@ -202,3 +202,18 @@ export interface ImportPreviewResult {
     revenue_village: string;
   }>;
 }
+
+export interface AppsScriptConfig {
+  webAppUrl: string;
+  apiSecretKey: string;
+  spreadsheetId: string;
+  lastConnectedAt: string | null;
+  lastStatus: 'ONLINE' | 'OFFLINE' | 'UNCONFIGURED';
+}
+
+export interface AppsScriptPingResult {
+  success: boolean;
+  status: string;
+  message: string;
+  details?: any;
+}
